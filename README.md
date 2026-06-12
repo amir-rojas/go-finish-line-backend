@@ -31,20 +31,40 @@ make run          # run locally on :8080
 make up           # build and run with Docker
 ```
 
-Verify it's alive:
+In development the schema is auto-migrated at startup.
 
-```sh
-curl http://localhost:8080/health
-```
+## API documentation
+
+The API is documented with OpenAPI and served by the app itself:
+
+- **http://localhost:8080/docs** — interactive documentation (browse endpoints, schemas, and test requests right from the browser)
+- **http://localhost:8080/openapi.yaml** — raw spec
+
+The spec lives at [api/openapi.yaml](api/openapi.yaml) and is the source of truth for the HTTP contract. Workflow: implement the feature, verify the real responses, then update the spec **in the same PR** — it is hand-maintained, so an outdated spec is a lying spec.
+
+Versioning follows [SemVer](https://semver.org) via `info.version` in the spec.
 
 ## Project structure
 
 ```
-cmd/api/            # entrypoint: wiring, config, HTTP server
+cmd/api/              # entrypoint: wiring (composition root), HTTP server
+api/                  # OpenAPI spec, embedded into the binary
 internal/
-  common/           # cross-cutting: config, postgres, server
-  <module>/         # one package per feature (user, auth, event, ...)
+  common/             # cross-cutting: config, postgres, security, server
+  <module>/           # one package per feature (user, auth, event, ...)
+    domain/           # entities, business rules, domain errors
+    ports/            # interfaces (contracts) the module needs
+    service/          # use cases, orchestrates domain + ports
+    adapters/
+      postgres/       # gorm implementation of the repository port
+      http/           # gin handlers + DTOs
 ```
+
+Rules of the architecture:
+
+- Dependencies always point inward: adapters → service → domain. The domain imports nothing.
+- Ports are named after roles (`UserRepository`); adapters after technologies (`postgres`, `http`).
+- Adapters translate at the boundary: storage errors → domain errors, domain → DTOs.
 
 ## Commands
 

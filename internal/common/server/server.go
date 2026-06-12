@@ -12,7 +12,13 @@ import (
 	"finish-line/api"
 )
 
-func New(logger *slog.Logger, db *gorm.DB) *gin.Engine {
+// RouteRegistrar lets each module contribute its routes without the server
+// knowing module internals.
+type RouteRegistrar interface {
+	RegisterRoutes(r gin.IRouter)
+}
+
+func New(logger *slog.Logger, db *gorm.DB, modules ...RouteRegistrar) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery(), requestLogger(logger))
 
@@ -20,6 +26,10 @@ func New(logger *slog.Logger, db *gorm.DB) *gin.Engine {
 
 	r.GET("/openapi.yaml", handleSpec())
 	r.GET("/docs", handleDocs())
+
+	for _, m := range modules {
+		m.RegisterRoutes(r)
+	}
 
 	return r
 }

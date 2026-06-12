@@ -15,7 +15,11 @@ import (
 
 	"finish-line/internal/common/config"
 	"finish-line/internal/common/postgres"
+	"finish-line/internal/common/security"
 	"finish-line/internal/common/server"
+	userhttp "finish-line/internal/user/adapters/http"
+	userpostgres "finish-line/internal/user/adapters/postgres"
+	userservice "finish-line/internal/user/service"
 )
 
 func main() {
@@ -46,9 +50,22 @@ func run() error {
 		return fmt.Errorf("connecting to database: %w", err)
 	}
 
+	// AutoMigrate is a development convenience; production schema changes
+	// must ship as explicit, reviewed migrations.
+	if !cfg.IsProduction() {
+		if err := userpostgres.Migrate(db); err != nil {
+			return fmt.Errorf("running dev migrations: %w", err)
+		}
+		logger.Info("dev migrations applied")
+	}
+
+	userModule := userhttp.NewHandler(
+		userservice.New(userpostgres.NewRepository(db), security.NewBcryptHasher()),
+	)
+
 	srv := &http.Server{
 		Addr:         ":" + cfg.AppPort,
-		Handler:      server.New(logger, db),
+		Handler:      server.New(logger, db, userModule),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

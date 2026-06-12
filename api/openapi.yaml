@@ -2,13 +2,15 @@ openapi: 3.0.3
 info:
   title: FinishLine API
   description: Backend for footrace participant registration.
-  version: 0.1.0
+  version: 0.2.0
 servers:
   - url: http://localhost:8080
     description: Local development
 tags:
   - name: system
     description: Operational and health endpoints
+  - name: users
+    description: Admin user management
 paths:
   /health:
     get:
@@ -33,6 +35,108 @@ paths:
                 $ref: "#/components/schemas/HealthStatus"
               example:
                 status: unavailable
+  /users:
+    post:
+      operationId: createUser
+      summary: Register a new admin user
+      tags:
+        - users
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Malformed body or validation failure (invalid email, password out of 8-72 range, missing fields)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: password must be at least 8 characters
+        "409":
+          description: Email is already registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: email is already registered
+    get:
+      operationId: listUsers
+      summary: List admin users
+      description: Without filters, returns all users ordered by creation date (newest first). With the email filter, returns an array with the matching user or an empty array — no match is not an error.
+      tags:
+        - users
+      parameters:
+        - name: email
+          in: query
+          required: false
+          description: Filter by exact email (case-insensitive)
+          schema:
+            type: string
+            format: email
+      responses:
+        "200":
+          description: Matching users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+        "400":
+          description: The email filter is not a valid email address
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: email is invalid
+  /users/{id}:
+    get:
+      operationId: getUserById
+      summary: Get an admin user by ID
+      tags:
+        - users
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: User found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: The id is not a valid UUID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: invalid user id
+        "404":
+          description: No user with that ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: user not found
 components:
   schemas:
     HealthStatus:
@@ -46,3 +150,54 @@ components:
             - ok
             - unavailable
           example: ok
+    CreateUserRequest:
+      type: object
+      required:
+        - name
+        - email
+        - password
+      properties:
+        name:
+          type: string
+          example: Ana Pérez
+        email:
+          type: string
+          format: email
+          example: ana@example.com
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 72
+          example: secure-password
+    User:
+      type: object
+      required:
+        - id
+        - name
+        - email
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 27494c6b-6532-4517-a7ea-b9f63279f7a2
+        name:
+          type: string
+          example: Ana Pérez
+        email:
+          type: string
+          format: email
+          example: ana@example.com
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-06-12T20:23:18.787316Z"
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          example: email is already registered
