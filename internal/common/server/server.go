@@ -8,6 +8,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+
+	"finish-line/api"
 )
 
 func New(logger *slog.Logger, db *gorm.DB) *gin.Engine {
@@ -15,6 +17,9 @@ func New(logger *slog.Logger, db *gorm.DB) *gin.Engine {
 	r.Use(gin.Recovery(), requestLogger(logger))
 
 	r.GET("/health", handleHealth(db))
+
+	r.GET("/openapi.yaml", handleSpec())
+	r.GET("/docs", handleDocs())
 
 	return r
 }
@@ -35,7 +40,31 @@ func handleHealth(db *gorm.DB) gin.HandlerFunc {
 	}
 }
 
-// requestLogger emits one structured log line per request.
+func handleSpec() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Data(http.StatusOK, "application/yaml", api.Spec)
+	}
+}
+
+func handleDocs() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(docsHTML))
+	}
+}
+
+const docsHTML = `<!doctype html>
+<html>
+  <head>
+    <title>FinishLine API</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  </head>
+  <body>
+    <script id="api-reference" data-url="/openapi.yaml"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+  </body>
+</html>`
+
 func requestLogger(logger *slog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()

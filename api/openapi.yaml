@@ -1,0 +1,48 @@
+openapi: 3.0.3
+info:
+  title: FinishLine API
+  description: Backend for footrace participant registration.
+  version: 0.1.0
+servers:
+  - url: http://localhost:8080
+    description: Local development
+tags:
+  - name: system
+    description: Operational and health endpoints
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Liveness and database connectivity check
+      tags:
+        - system
+      responses:
+        "200":
+          description: Service and database are healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+              example:
+                status: ok
+        "503":
+          description: Service is up but the database is unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+              example:
+                status: unavailable
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - ok
+            - unavailable
+          example: ok
