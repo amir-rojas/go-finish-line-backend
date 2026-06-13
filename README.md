@@ -57,14 +57,20 @@ internal/
     service/          # use cases, orchestrates domain + ports
     adapters/
       postgres/       # gorm implementation of the repository port
-      http/           # gin handlers + DTOs
+      rest/           # gin handlers + DTOs
+  apperr/             # shared domain kernel: categorized errors
 ```
 
 Rules of the architecture:
 
-- Dependencies always point inward: adapters → service → domain. The domain imports nothing.
-- Ports are named after roles (`UserRepository`); adapters after technologies (`postgres`, `http`).
+- Dependencies always point inward: adapters → service → domain. The domain depends on no framework or infrastructure (no gin, no gorm) — only the standard library, a UUID helper, and the `apperr` kernel.
+- Ports are named after roles (`UserRepository`); adapters after technologies (`postgres`, `rest`).
 - Adapters translate at the boundary: storage errors → domain errors, domain → DTOs.
+- Domain errors carry a category (`apperr.Kind`); the transport layer maps categories to status codes, so handlers never enumerate which errors are 400s.
+
+## Database migrations
+
+In development the schema is applied at startup via `postgres.RunMigrations`, which enables shared extensions (e.g. `citext`) and then runs each module's gorm `AutoMigrate` in order. In production this is skipped — schema changes ship as explicit, versioned migrations.
 
 ## Commands
 

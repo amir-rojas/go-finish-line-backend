@@ -17,8 +17,8 @@ import (
 	"finish-line/internal/common/postgres"
 	"finish-line/internal/common/security"
 	"finish-line/internal/common/server"
-	userhttp "finish-line/internal/user/adapters/http"
 	userpostgres "finish-line/internal/user/adapters/postgres"
+	userrest "finish-line/internal/user/adapters/rest"
 	userservice "finish-line/internal/user/service"
 )
 
@@ -51,15 +51,16 @@ func run() error {
 	}
 
 	// AutoMigrate is a development convenience; production schema changes
-	// must ship as explicit, reviewed migrations.
+	// must ship as explicit, reviewed migrations. Register each module's
+	// migration here in dependency order.
 	if !cfg.IsProduction() {
-		if err := userpostgres.Migrate(db); err != nil {
+		if err := postgres.RunMigrations(db, userpostgres.Migrate); err != nil {
 			return fmt.Errorf("running dev migrations: %w", err)
 		}
 		logger.Info("dev migrations applied")
 	}
 
-	userModule := userhttp.NewHandler(
+	userModule := userrest.NewHandler(
 		userservice.New(userpostgres.NewRepository(db), security.NewBcryptHasher()),
 	)
 

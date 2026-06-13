@@ -1,4 +1,4 @@
-package http_test
+package rest_test
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	userhttp "finish-line/internal/user/adapters/http"
+	"finish-line/internal/user/adapters/rest"
 	"finish-line/internal/user/domain"
 )
 
@@ -50,7 +50,7 @@ func (s *fakeService) List(_ context.Context) ([]domain.User, error) {
 func setupRouter(svc *fakeService) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	userhttp.NewHandler(svc).RegisterRoutes(r)
+	rest.NewHandler(svc).RegisterRoutes(r)
 	return r
 }
 

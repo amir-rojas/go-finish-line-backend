@@ -1,14 +1,14 @@
-package http
+package rest
 
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"finish-line/internal/common/httpx"
 	"finish-line/internal/user/domain"
 )
 
@@ -39,13 +39,13 @@ func (h *Handler) RegisterRoutes(r gin.IRouter) {
 func (h *Handler) create(c *gin.Context) {
 	var req createUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid request body"})
+		httpx.BadRequest(c, "invalid request body")
 		return
 	}
 
 	u, err := h.svc.Register(c.Request.Context(), req.Name, req.Email, req.Password)
 	if err != nil {
-		respondError(c, err)
+		httpx.RespondError(c, err)
 		return
 	}
 
@@ -60,7 +60,7 @@ func (h *Handler) list(c *gin.Context) {
 
 	users, err := h.svc.List(c.Request.Context())
 	if err != nil {
-		respondError(c, err)
+		httpx.RespondError(c, err)
 		return
 	}
 
@@ -79,7 +79,7 @@ func (h *Handler) listByEmail(c *gin.Context, email string) {
 	case errors.Is(err, domain.ErrNotFound):
 		c.JSON(http.StatusOK, []userResponse{})
 	case err != nil:
-		respondError(c, err)
+		httpx.RespondError(c, err)
 	default:
 		c.JSON(http.StatusOK, []userResponse{toResponse(u)})
 	}
@@ -88,38 +88,15 @@ func (h *Handler) listByEmail(c *gin.Context, email string) {
 func (h *Handler) byID(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid user id"})
+		httpx.BadRequest(c, "invalid user id")
 		return
 	}
 
 	u, err := h.svc.ByID(c.Request.Context(), id)
 	if err != nil {
-		respondError(c, err)
+		httpx.RespondError(c, err)
 		return
 	}
 
 	c.JSON(http.StatusOK, toResponse(u))
-}
-
-// respondError maps domain errors to HTTP status codes. Internal errors are
-// logged but never leaked to the client.
-func respondError(c *gin.Context, err error) {
-	switch {
-	case errors.Is(err, domain.ErrEmailTaken):
-		c.JSON(http.StatusConflict, errorResponse{Error: domain.ErrEmailTaken.Error()})
-	case errors.Is(err, domain.ErrNotFound):
-		c.JSON(http.StatusNotFound, errorResponse{Error: domain.ErrNotFound.Error()})
-	case isValidationError(err):
-		c.JSON(http.StatusBadRequest, errorResponse{Error: err.Error()})
-	default:
-		slog.Error("unhandled error in user handler", "error", err)
-		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal server error"})
-	}
-}
-
-func isValidationError(err error) bool {
-	return errors.Is(err, domain.ErrNameRequired) ||
-		errors.Is(err, domain.ErrEmailInvalid) ||
-		errors.Is(err, domain.ErrPasswordTooShort) ||
-		errors.Is(err, domain.ErrPasswordTooLong)
 }

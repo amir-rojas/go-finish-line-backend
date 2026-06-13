@@ -3,6 +3,8 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 
 	"github.com/joho/godotenv"
@@ -23,11 +25,18 @@ type DBConfig struct {
 	SSLMode  string
 }
 
+// DSN builds a URL connection string. Using net/url means a password with
+// spaces or special characters is percent-encoded correctly, instead of
+// breaking the space-delimited key=value format.
 func (d DBConfig) DSN() string {
-	return fmt.Sprintf(
-		"host=%s user=%s password=%s dbname=%s port=%s sslmode=%s",
-		d.Host, d.User, d.Password, d.Name, d.Port, d.SSLMode,
-	)
+	u := url.URL{
+		Scheme:   "postgres",
+		User:     url.UserPassword(d.User, d.Password),
+		Host:     net.JoinHostPort(d.Host, d.Port),
+		Path:     d.Name,
+		RawQuery: url.Values{"sslmode": {d.SSLMode}}.Encode(),
+	}
+	return u.String()
 }
 
 func Load() (*Config, error) {

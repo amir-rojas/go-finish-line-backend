@@ -1,4 +1,4 @@
-package http
+package rest
 
 import (
 	"time"
@@ -21,10 +21,6 @@ type userResponse struct {
 	Name      string    `json:"name"`
 	Email     string    `json:"email"`
 	CreatedAt time.Time `json:"created_at"`
-}
-
-type errorResponse struct {
-	Error string `json:"error"`
 }
 
 func toResponse(u *domain.User) userResponse {
