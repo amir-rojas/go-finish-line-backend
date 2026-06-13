@@ -35,7 +35,7 @@ paths:
                 $ref: "#/components/schemas/HealthStatus"
               example:
                 status: unavailable
-  /users:
+  /api/v1/users:
     post:
       operationId: createUser
       summary: Register a new admin user
@@ -101,7 +101,7 @@ paths:
                 $ref: "#/components/schemas/Error"
               example:
                 error: email is invalid
-  /users/{id}:
+  /api/v1/users/{id}:
     get:
       operationId: getUserById
       summary: Get an admin user by ID

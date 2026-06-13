@@ -22,13 +22,19 @@ func New(logger *slog.Logger, db *gorm.DB, modules ...RouteRegistrar) *gin.Engin
 	r := gin.New()
 	r.Use(gin.Recovery(), requestLogger(logger))
 
+	// Operational and meta endpoints live at the root, outside the versioned
+	// API: health is for infrastructure probes and docs describe the API
+	// rather than being part of it. Neither should move when the API version
+	// changes.
 	r.GET("/health", handleHealth(db))
-
 	r.GET("/openapi.yaml", handleSpec())
 	r.GET("/docs", handleDocs())
 
+	// Business resources are versioned. Modules register their routes onto
+	// the /api/v1 group without knowing the prefix exists.
+	v1 := r.Group("/api/v1")
 	for _, m := range modules {
-		m.RegisterRoutes(r)
+		m.RegisterRoutes(v1)
 	}
 
 	return r
