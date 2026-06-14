@@ -16,6 +16,7 @@ type UserRepository interface {
 	ByID(ctx context.Context, id uuid.UUID) (*domain.User, error)
 	ByEmail(ctx context.Context, email string) (*domain.User, error)
 	List(ctx context.Context) ([]domain.User, error)
+	UpdatePassword(ctx context.Context, id uuid.UUID, passwordHash string) error
 }
 
 // PasswordHasher abstracts the hashing algorithm so the service never
@@ -23,4 +24,11 @@ type UserRepository interface {
 type PasswordHasher interface {
 	Hash(plain string) (string, error)
 	Verify(plain, hash string) (bool, error)
+}
+
+// SessionRevoker ends every active session for a user. The user module owns
+// this port; the auth module implements it. It lets a password change log the
+// user out everywhere without the user module depending on auth.
+type SessionRevoker interface {
+	RevokeAllSessions(ctx context.Context, userID uuid.UUID) error
 }

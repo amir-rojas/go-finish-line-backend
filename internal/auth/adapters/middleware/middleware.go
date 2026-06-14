@@ -10,10 +10,6 @@ import (
 	"finish-line/internal/common/httpx"
 )
 
-// ContextUserID is the gin context key under which the authenticated user's
-// ID is stored for downstream handlers.
-const ContextUserID = "userID"
-
 // Authenticator is the consumer-side contract the middleware needs: turn an
 // access token into the user it identifies.
 type Authenticator interface {
@@ -37,7 +33,7 @@ func RequireAuth(auth Authenticator) gin.HandlerFunc {
 			return
 		}
 
-		c.Set(ContextUserID, userID)
+		httpx.SetUserID(c, userID)
 		c.Next()
 	}
 }

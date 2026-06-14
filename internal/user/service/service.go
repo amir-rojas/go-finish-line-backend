@@ -12,12 +12,13 @@ import (
 )
 
 type Service struct {
-	repo   ports.UserRepository
-	hasher ports.PasswordHasher
+	repo     ports.UserRepository
+	hasher   ports.PasswordHasher
+	sessions ports.SessionRevoker
 }
 
-func New(repo ports.UserRepository, hasher ports.PasswordHasher) *Service {
-	return &Service{repo: repo, hasher: hasher}
+func New(repo ports.UserRepository, hasher ports.PasswordHasher, sessions ports.SessionRevoker) *Service {
+	return &Service{repo: repo, hasher: hasher, sessions: sessions}
 }
 
 // Register creates a new admin user with a hashed password.
@@ -64,6 +65,44 @@ func (s *Service) ByEmail(ctx context.Context, email string) (*domain.User, erro
 		return nil, fmt.Errorf("getting user by email: %w", err)
 	}
 	return u, nil
+}
+
+// ChangePassword updates a user's password after verifying the current one.
+// Requiring the current password means a leaked access token alone is not
+// enough to take over the account's credential.
+func (s *Service) ChangePassword(ctx context.Context, id uuid.UUID, currentPassword, newPassword string) error {
+	u, err := s.repo.ByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("getting user: %w", err)
+	}
+
+	ok, err := s.hasher.Verify(currentPassword, u.PasswordHash)
+	if err != nil {
+		return fmt.Errorf("verifying current password: %w", err)
+	}
+	if !ok {
+		return domain.ErrIncorrectPassword
+	}
+
+	if err := domain.ValidatePassword(newPassword); err != nil {
+		return err
+	}
+
+	hash, err := s.hasher.Hash(newPassword)
+	if err != nil {
+		return fmt.Errorf("hashing new password: %w", err)
+	}
+
+	if err := s.repo.UpdatePassword(ctx, id, hash); err != nil {
+		return fmt.Errorf("updating password: %w", err)
+	}
+
+	// A changed password ends every session, including the one that made this
+	// request — the user must log in again everywhere with the new password.
+	if err := s.sessions.RevokeAllSessions(ctx, id); err != nil {
+		return fmt.Errorf("revoking sessions after password change: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) ByID(ctx context.Context, id uuid.UUID) (*domain.User, error) {

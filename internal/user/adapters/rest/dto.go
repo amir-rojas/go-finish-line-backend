@@ -14,6 +14,11 @@ type createUserRequest struct {
 	Password string `json:"password" binding:"required"`
 }
 
+type changePasswordRequest struct {
+	CurrentPassword string `json:"current_password" binding:"required"`
+	NewPassword     string `json:"new_password" binding:"required"`
+}
+
 // userResponse deliberately omits the password hash: it must never leave
 // the adapter boundary.
 type userResponse struct {

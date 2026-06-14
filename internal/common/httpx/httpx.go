@@ -8,12 +8,35 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"finish-line/internal/apperr"
 )
 
 type errorResponse struct {
 	Error string `json:"error"`
+}
+
+// contextUserIDKey is where the auth middleware stores the authenticated
+// user's ID. It lives here, in a neutral shared package, so a module's
+// handler can read it without importing the auth module (which would invert
+// the dependency direction).
+const contextUserIDKey = "userID"
+
+// SetUserID records the authenticated user on the request context.
+func SetUserID(c *gin.Context, id uuid.UUID) {
+	c.Set(contextUserIDKey, id)
+}
+
+// UserID returns the authenticated user's ID, or false if the request was
+// not authenticated.
+func UserID(c *gin.Context) (uuid.UUID, bool) {
+	v, ok := c.Get(contextUserIDKey)
+	if !ok {
+		return uuid.Nil, false
+	}
+	id, ok := v.(uuid.UUID)
+	return id, ok
 }
 
 // RespondError maps a domain error to its HTTP status by category. Errors
@@ -44,6 +67,11 @@ func BadRequest(c *gin.Context, msg string) {
 // before the domain is reached.
 func Unauthorized(c *gin.Context, msg string) {
 	c.JSON(http.StatusUnauthorized, errorResponse{Error: msg})
+}
+
+// TooManyRequests reports that the caller has been rate limited.
+func TooManyRequests(c *gin.Context, msg string) {
+	c.JSON(http.StatusTooManyRequests, errorResponse{Error: msg})
 }
 
 func statusFor(kind apperr.Kind) int {

@@ -34,4 +34,5 @@ type RefreshTokenRepository interface {
 	ByTokenHash(ctx context.Context, hash string) (*domain.RefreshToken, error)
 	MarkRotated(ctx context.Context, id uuid.UUID) error
 	RevokeFamily(ctx context.Context, familyID uuid.UUID) error
+	RevokeAllForUser(ctx context.Context, userID uuid.UUID) error
 }

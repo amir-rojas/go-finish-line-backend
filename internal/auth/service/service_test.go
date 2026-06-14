@@ -75,6 +75,10 @@ func (r *fakeRefreshRepo) RevokeFamily(_ context.Context, familyID uuid.UUID) er
 	return nil
 }
 
+func (r *fakeRefreshRepo) RevokeAllForUser(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+
 func validUser() *userdomain.User {
 	return &userdomain.User{ID: uuid.New(), Email: "admin@finishline.dev", PasswordHash: "stored-hash"}
 }

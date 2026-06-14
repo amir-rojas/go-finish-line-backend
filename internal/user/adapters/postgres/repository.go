@@ -55,6 +55,20 @@ func (r *Repository) ByEmail(ctx context.Context, email string) (*domain.User, e
 	return toDomain(m), nil
 }
 
+func (r *Repository) UpdatePassword(ctx context.Context, id uuid.UUID, passwordHash string) error {
+	res := r.db.WithContext(ctx).
+		Model(&userModel{}).
+		Where("id = ?", id).
+		Update("password_hash", passwordHash)
+	if res.Error != nil {
+		return fmt.Errorf("updating password: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
 func (r *Repository) List(ctx context.Context) ([]domain.User, error) {
 	var models []userModel
 	if err := r.db.WithContext(ctx).Order("created_at DESC").Find(&models).Error; err != nil {

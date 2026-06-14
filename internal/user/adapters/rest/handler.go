@@ -19,6 +19,7 @@ type UserService interface {
 	ByID(ctx context.Context, id uuid.UUID) (*domain.User, error)
 	ByEmail(ctx context.Context, email string) (*domain.User, error)
 	List(ctx context.Context) ([]domain.User, error)
+	ChangePassword(ctx context.Context, id uuid.UUID, currentPassword, newPassword string) error
 }
 
 type Handler struct {
@@ -33,6 +34,10 @@ func (h *Handler) RegisterRoutes(r gin.IRouter) {
 	users := r.Group("/users")
 	users.POST("", h.create)
 	users.GET("", h.list)
+	// Static routes are registered before the :id param route so "me" is
+	// never mistaken for an id.
+	users.GET("/me", h.me)
+	users.PUT("/me/password", h.changePassword)
 	users.GET("/:id", h.byID)
 }
 
@@ -83,6 +88,45 @@ func (h *Handler) listByEmail(c *gin.Context, email string) {
 	default:
 		c.JSON(http.StatusOK, []userResponse{toResponse(u)})
 	}
+}
+
+// me returns the currently authenticated user, identified by the access
+// token rather than a path parameter.
+func (h *Handler) me(c *gin.Context) {
+	userID, ok := httpx.UserID(c)
+	if !ok {
+		httpx.Unauthorized(c, "not authenticated")
+		return
+	}
+
+	u, err := h.svc.ByID(c.Request.Context(), userID)
+	if err != nil {
+		httpx.RespondError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, toResponse(u))
+}
+
+func (h *Handler) changePassword(c *gin.Context) {
+	userID, ok := httpx.UserID(c)
+	if !ok {
+		httpx.Unauthorized(c, "not authenticated")
+		return
+	}
+
+	var req changePasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpx.BadRequest(c, "invalid request body")
+		return
+	}
+
+	if err := h.svc.ChangePassword(c.Request.Context(), userID, req.CurrentPassword, req.NewPassword); err != nil {
+		httpx.RespondError(c, err)
+		return
+	}
+
+	c.Status(http.StatusNoContent)
 }
 
 func (h *Handler) byID(c *gin.Context) {

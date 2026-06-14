@@ -65,3 +65,16 @@ func (r *Repository) RevokeFamily(ctx context.Context, familyID uuid.UUID) error
 	}
 	return nil
 }
+
+// RevokeAllForUser revokes every still-active token a user has across all
+// families — used to log them out everywhere (e.g. after a password change).
+func (r *Repository) RevokeAllForUser(ctx context.Context, userID uuid.UUID) error {
+	err := r.db.WithContext(ctx).
+		Model(&refreshTokenModel{}).
+		Where("user_id = ? AND revoked_at IS NULL", userID).
+		Update("revoked_at", time.Now()).Error
+	if err != nil {
+		return fmt.Errorf("revoking all user sessions: %w", err)
+	}
+	return nil
+}

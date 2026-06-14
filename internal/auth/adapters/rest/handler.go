@@ -22,22 +22,25 @@ const refreshCookiePath = "/api/v1/auth"
 type AuthService interface {
 	Login(ctx context.Context, email, password string) (*service.TokenPair, error)
 	Refresh(ctx context.Context, rawRefresh string) (*service.TokenPair, error)
+	Logout(ctx context.Context, rawRefresh string) error
 }
 
 type Handler struct {
 	svc          AuthService
 	refreshTTL   time.Duration
 	secureCookie bool
+	loginLimiter gin.HandlerFunc
 }
 
-func NewHandler(svc AuthService, refreshTTL time.Duration, secureCookie bool) *Handler {
-	return &Handler{svc: svc, refreshTTL: refreshTTL, secureCookie: secureCookie}
+func NewHandler(svc AuthService, refreshTTL time.Duration, secureCookie bool, loginLimiter gin.HandlerFunc) *Handler {
+	return &Handler{svc: svc, refreshTTL: refreshTTL, secureCookie: secureCookie, loginLimiter: loginLimiter}
 }
 
 func (h *Handler) RegisterRoutes(r gin.IRouter) {
 	auth := r.Group("/auth")
-	auth.POST("/login", h.login)
+	auth.POST("/login", h.loginLimiter, h.login)
 	auth.POST("/refresh", h.refresh)
+	auth.POST("/logout", h.logout)
 }
 
 func (h *Handler) login(c *gin.Context) {
@@ -75,6 +78,19 @@ func (h *Handler) refresh(c *gin.Context) {
 
 	h.setRefreshCookie(c, pair.RefreshToken)
 	c.JSON(http.StatusOK, toTokenResponse(pair))
+}
+
+func (h *Handler) logout(c *gin.Context) {
+	// Logout relies on the refresh cookie, not the access token, so it works
+	// even after the access token has expired.
+	if raw, err := c.Cookie(refreshCookieName); err == nil {
+		if err := h.svc.Logout(c.Request.Context(), raw); err != nil {
+			httpx.RespondError(c, err)
+			return
+		}
+	}
+	h.clearRefreshCookie(c)
+	c.Status(http.StatusNoContent)
 }
 
 func (h *Handler) setRefreshCookie(c *gin.Context, token string) {

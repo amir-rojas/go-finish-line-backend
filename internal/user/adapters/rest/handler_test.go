@@ -11,15 +11,17 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"finish-line/internal/common/httpx"
 	"finish-line/internal/user/adapters/rest"
 	"finish-line/internal/user/domain"
 )
 
 type fakeService struct {
-	registerErr error
-	byIDErr     error
-	byEmailErr  error
-	users       []domain.User
+	registerErr       error
+	byIDErr           error
+	byEmailErr        error
+	changePasswordErr error
+	users             []domain.User
 }
 
 func (s *fakeService) Register(_ context.Context, name, email, password string) (*domain.User, error) {
@@ -47,9 +49,26 @@ func (s *fakeService) List(_ context.Context) ([]domain.User, error) {
 	return s.users, nil
 }
 
+func (s *fakeService) ChangePassword(_ context.Context, _ uuid.UUID, _, _ string) error {
+	return s.changePasswordErr
+}
+
 func setupRouter(svc *fakeService) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
+	rest.NewHandler(svc).RegisterRoutes(r)
+	return r
+}
+
+// setupAuthedRouter injects an authenticated user id into the context, the
+// way the real auth middleware would, so protected handlers can be tested.
+func setupAuthedRouter(svc *fakeService, userID uuid.UUID) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		httpx.SetUserID(c, userID)
+		c.Next()
+	})
 	rest.NewHandler(svc).RegisterRoutes(r)
 	return r
 }
@@ -153,6 +172,68 @@ func TestListByEmail(t *testing.T) {
 			}
 			if len(out) != tt.wantLen {
 				t.Errorf("len = %d, want %d", len(out), tt.wantLen)
+			}
+		})
+	}
+}
+
+func TestMe(t *testing.T) {
+	t.Run("returns the authenticated user", func(t *testing.T) {
+		userID := uuid.New()
+		router := setupAuthedRouter(&fakeService{}, userID)
+
+		req := httptest.NewRequest(http.MethodGet, "/users/me", nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d (body: %s)", rec.Code, http.StatusOK, rec.Body)
+		}
+		if strings.Contains(rec.Body.String(), "secret-hash") {
+			t.Error("response leaked the password hash")
+		}
+	})
+
+	t.Run("401 when not authenticated", func(t *testing.T) {
+		router := setupRouter(&fakeService{})
+
+		req := httptest.NewRequest(http.MethodGet, "/users/me", nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+		}
+	})
+}
+
+func TestChangePassword(t *testing.T) {
+	body := `{"current_password":"current-password","new_password":"brand-new-password"}`
+
+	tests := []struct {
+		name       string
+		body       string
+		serviceErr error
+		wantStatus int
+	}{
+		{name: "success returns 204", body: body, wantStatus: http.StatusNoContent},
+		{name: "malformed body", body: `{`, wantStatus: http.StatusBadRequest},
+		{name: "missing fields", body: `{"current_password":"x"}`, wantStatus: http.StatusBadRequest},
+		{name: "wrong current password", body: body, serviceErr: domain.ErrIncorrectPassword, wantStatus: http.StatusUnauthorized},
+		{name: "new password too short", body: body, serviceErr: domain.ErrPasswordTooShort, wantStatus: http.StatusBadRequest},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			router := setupAuthedRouter(&fakeService{changePasswordErr: tt.serviceErr}, uuid.New())
+
+			req := httptest.NewRequest(http.MethodPut, "/users/me/password", strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d (body: %s)", rec.Code, tt.wantStatus, rec.Body)
 			}
 		})
 	}

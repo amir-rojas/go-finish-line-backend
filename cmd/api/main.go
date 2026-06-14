@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/time/rate"
 
 	authjwt "finish-line/internal/auth/adapters/jwt"
 	authmiddleware "finish-line/internal/auth/adapters/middleware"
@@ -20,6 +21,7 @@ import (
 	authservice "finish-line/internal/auth/service"
 	"finish-line/internal/common/config"
 	"finish-line/internal/common/postgres"
+	"finish-line/internal/common/ratelimit"
 	"finish-line/internal/common/security"
 	"finish-line/internal/common/server"
 	userpostgres "finish-line/internal/user/adapters/postgres"
@@ -58,7 +60,22 @@ func run() error {
 	// Shared infrastructure used across modules.
 	hasher := security.NewBcryptHasher()
 	userRepo := userpostgres.NewRepository(db)
-	userSvc := userservice.New(userRepo, hasher)
+
+	// Auth module reuses the user repository (as a UserFinder) and the hasher
+	// (as a PasswordVerifier) — the narrow interfaces it actually needs.
+	authSvc := authservice.New(
+		userRepo,
+		hasher,
+		authjwt.New(cfg.Auth.JWTSecret, cfg.Auth.AccessTTL),
+		authpostgres.NewRepository(db),
+		cfg.Auth.RefreshTTL,
+	)
+
+	// The user service uses the auth service as its SessionRevoker so that a
+	// password change can end every session. auth depends on the user repo,
+	// the user service depends on auth — no cycle, since they are different
+	// objects.
+	userSvc := userservice.New(userRepo, hasher, authSvc)
 
 	// AutoMigrate is a development convenience; production schema changes
 	// must ship as explicit, reviewed migrations. Register each module's
@@ -73,18 +90,11 @@ func run() error {
 		logger.Info("dev migrations applied and admin ensured")
 	}
 
-	// Auth module reuses the user repository (as a UserFinder) and the hasher
-	// (as a PasswordVerifier) — the narrow interfaces it actually needs.
-	authSvc := authservice.New(
-		userRepo,
-		hasher,
-		authjwt.New(cfg.Auth.JWTSecret, cfg.Auth.AccessTTL),
-		authpostgres.NewRepository(db),
-		cfg.Auth.RefreshTTL,
-	)
+	// Throttle login attempts per IP to blunt brute-force password guessing.
+	loginLimiter := ratelimit.PerIP(rate.Every(time.Second), 5)
 
 	userModule := userrest.NewHandler(userSvc)
-	authModule := authrest.NewHandler(authSvc, cfg.Auth.RefreshTTL, cfg.IsProduction())
+	authModule := authrest.NewHandler(authSvc, cfg.Auth.RefreshTTL, cfg.IsProduction(), loginLimiter)
 	authMW := authmiddleware.RequireAuth(authSvc)
 
 	srv := &http.Server{

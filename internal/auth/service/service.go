@@ -101,6 +101,33 @@ func (s *Service) Refresh(ctx context.Context, rawRefresh string) (*TokenPair, e
 	return s.issueTokenPair(ctx, rt.UserID, rt.FamilyID)
 }
 
+// Logout revokes the session family the refresh token belongs to. It is
+// idempotent: an unknown token is treated as already-logged-out. Only this
+// device's family is revoked — other devices (other families) stay logged in.
+func (s *Service) Logout(ctx context.Context, rawRefresh string) error {
+	rt, err := s.refresh.ByTokenHash(ctx, domain.HashToken(rawRefresh))
+	if err != nil {
+		if errors.Is(err, domain.ErrRefreshTokenNotFound) {
+			return nil
+		}
+		return fmt.Errorf("looking up refresh token: %w", err)
+	}
+
+	if err := s.refresh.RevokeFamily(ctx, rt.FamilyID); err != nil {
+		return fmt.Errorf("revoking token family: %w", err)
+	}
+	return nil
+}
+
+// RevokeAllSessions ends every active session a user has, forcing re-login on
+// all devices. Satisfies the user module's SessionRevoker port.
+func (s *Service) RevokeAllSessions(ctx context.Context, userID uuid.UUID) error {
+	if err := s.refresh.RevokeAllForUser(ctx, userID); err != nil {
+		return fmt.Errorf("revoking all sessions: %w", err)
+	}
+	return nil
+}
+
 // Authenticate validates an access token and returns who it belongs to. Any
 // failure is flattened to ErrInvalidToken — the middleware only needs to know
 // the caller is not authenticated.

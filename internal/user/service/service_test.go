@@ -55,6 +55,29 @@ func (r *fakeRepo) List(_ context.Context) ([]domain.User, error) {
 	return out, nil
 }
 
+func (r *fakeRepo) UpdatePassword(_ context.Context, id uuid.UUID, passwordHash string) error {
+	for _, u := range r.users {
+		if u.ID == id {
+			u.PasswordHash = passwordHash
+			return nil
+		}
+	}
+	return domain.ErrNotFound
+}
+
+type fakeSessionRevoker struct {
+	revokedUserID uuid.UUID
+	err           error
+}
+
+func (r *fakeSessionRevoker) RevokeAllSessions(_ context.Context, userID uuid.UUID) error {
+	if r.err != nil {
+		return r.err
+	}
+	r.revokedUserID = userID
+	return nil
+}
+
 type fakeHasher struct {
 	hashErr error
 }
@@ -119,7 +142,7 @@ func TestRegister(t *testing.T) {
 			if tt.setup != nil {
 				tt.setup(repo, hasher)
 			}
-			svc := service.New(repo, hasher)
+			svc := service.New(repo, hasher, &fakeSessionRevoker{})
 
 			u, err := svc.Register(context.Background(), tt.userName, tt.email, tt.password)
 
@@ -146,10 +169,54 @@ func TestRegister(t *testing.T) {
 	}
 }
 
+func TestChangePassword(t *testing.T) {
+	setup := func() (*service.Service, *fakeRepo, *fakeSessionRevoker, uuid.UUID) {
+		repo := newFakeRepo()
+		hasher := &fakeHasher{}
+		revoker := &fakeSessionRevoker{}
+		svc := service.New(repo, hasher, revoker)
+		u, _ := svc.Register(context.Background(), "Ana", "ana@example.com", "current-password")
+		return svc, repo, revoker, u.ID
+	}
+
+	t.Run("valid change updates the hash and revokes all sessions", func(t *testing.T) {
+		svc, repo, revoker, id := setup()
+
+		if err := svc.ChangePassword(context.Background(), id, "current-password", "brand-new-password"); err != nil {
+			t.Fatalf("ChangePassword() unexpected error: %v", err)
+		}
+		u, _ := repo.ByID(context.Background(), id)
+		if u.PasswordHash != "hashed:brand-new-password" {
+			t.Errorf("password hash not updated, got %q", u.PasswordHash)
+		}
+		if revoker.revokedUserID != id {
+			t.Error("ChangePassword() did not revoke the user's sessions")
+		}
+	})
+
+	t.Run("wrong current password is rejected", func(t *testing.T) {
+		svc, _, _, id := setup()
+
+		err := svc.ChangePassword(context.Background(), id, "wrong-current", "brand-new-password")
+		if !errors.Is(err, domain.ErrIncorrectPassword) {
+			t.Errorf("ChangePassword() error = %v, want ErrIncorrectPassword", err)
+		}
+	})
+
+	t.Run("new password must satisfy the policy", func(t *testing.T) {
+		svc, _, _, id := setup()
+
+		err := svc.ChangePassword(context.Background(), id, "current-password", "short")
+		if !errors.Is(err, domain.ErrPasswordTooShort) {
+			t.Errorf("ChangePassword() error = %v, want ErrPasswordTooShort", err)
+		}
+	})
+}
+
 func TestRegister_HasherFailure(t *testing.T) {
 	repo := newFakeRepo()
 	hasher := &fakeHasher{hashErr: errors.New("boom")}
-	svc := service.New(repo, hasher)
+	svc := service.New(repo, hasher, &fakeSessionRevoker{})
 
 	_, err := svc.Register(context.Background(), "Ana", "ana@example.com", "secure-password")
 	if err == nil {
