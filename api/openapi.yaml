@@ -2,16 +2,74 @@ openapi: 3.0.3
 info:
   title: FinishLine API
   description: Backend for footrace participant registration.
-  version: 0.2.0
+  version: 0.3.0
 servers:
   - url: http://localhost:8080
     description: Local development
 tags:
   - name: system
     description: Operational and health endpoints
+  - name: auth
+    description: Authentication — login, token refresh
   - name: users
     description: Admin user management
 paths:
+  /api/v1/auth/login:
+    post:
+      operationId: login
+      summary: Authenticate and receive tokens
+      description: Returns a short-lived access token in the body and sets a long-lived refresh token in an httpOnly cookie.
+      tags:
+        - auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Authenticated. Access token in body, refresh token in a Set-Cookie header.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "400":
+          description: Malformed body or missing fields
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Invalid credentials (same response whether the email is unknown or the password is wrong)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: invalid credentials
+  /api/v1/auth/refresh:
+    post:
+      operationId: refresh
+      summary: Rotate tokens using the refresh cookie
+      description: Reads the refresh token from the httpOnly cookie, issues a new access token and a rotated refresh token. Reusing an already-rotated token revokes the whole session family.
+      tags:
+        - auth
+      responses:
+        "200":
+          description: Rotated. New access token in body, new refresh token in a Set-Cookie header.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "401":
+          description: Missing, expired, invalid, or reused refresh token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                error: token reuse detected
   /health:
     get:
       operationId: getHealth
@@ -41,6 +99,8 @@ paths:
       summary: Register a new admin user
       tags:
         - users
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -76,6 +136,8 @@ paths:
       description: Without filters, returns all users ordered by creation date (newest first). With the email filter, returns an array with the matching user or an empty array — no match is not an error.
       tags:
         - users
+      security:
+        - bearerAuth: []
       parameters:
         - name: email
           in: query
@@ -107,6 +169,8 @@ paths:
       summary: Get an admin user by ID
       tags:
         - users
+      security:
+        - bearerAuth: []
       parameters:
         - name: id
           in: path
@@ -138,7 +202,43 @@ paths:
               example:
                 error: user not found
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
   schemas:
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: admin@finishline.dev
+        password:
+          type: string
+          format: password
+          example: admin.123
+    TokenResponse:
+      type: object
+      required:
+        - access_token
+        - token_type
+        - expires_at
+      properties:
+        access_token:
+          type: string
+          description: "Short-lived JWT to send as `Authorization: Bearer <token>`."
+        token_type:
+          type: string
+          example: Bearer
+        expires_at:
+          type: string
+          format: date-time
+          example: "2026-06-13T22:16:56Z"
     HealthStatus:
       type: object
       required:

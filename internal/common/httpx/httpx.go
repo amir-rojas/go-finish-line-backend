@@ -40,10 +40,18 @@ func BadRequest(c *gin.Context, msg string) {
 	c.JSON(http.StatusBadRequest, errorResponse{Error: msg})
 }
 
+// Unauthorized reports a transport-level missing or malformed credential
+// before the domain is reached.
+func Unauthorized(c *gin.Context, msg string) {
+	c.JSON(http.StatusUnauthorized, errorResponse{Error: msg})
+}
+
 func statusFor(kind apperr.Kind) int {
 	switch kind {
 	case apperr.KindValidation:
 		return http.StatusBadRequest
+	case apperr.KindUnauthorized:
+		return http.StatusUnauthorized
 	case apperr.KindConflict:
 		return http.StatusConflict
 	case apperr.KindNotFound:

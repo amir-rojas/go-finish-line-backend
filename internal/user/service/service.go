@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -40,6 +41,16 @@ func (s *Service) Register(ctx context.Context, name, email, password string) (*
 	}
 
 	return u, nil
+}
+
+// EnsureAdmin creates the given admin if it does not already exist. It is
+// idempotent, so it is safe to call on every dev startup as a bootstrap seed.
+func (s *Service) EnsureAdmin(ctx context.Context, name, email, password string) error {
+	_, err := s.Register(ctx, name, email, password)
+	if err == nil || errors.Is(err, domain.ErrEmailTaken) {
+		return nil
+	}
+	return fmt.Errorf("ensuring admin user: %w", err)
 }
 
 func (s *Service) ByEmail(ctx context.Context, email string) (*domain.User, error) {

@@ -18,7 +18,15 @@ type RouteRegistrar interface {
 	RegisterRoutes(r gin.IRouter)
 }
 
-func New(logger *slog.Logger, db *gorm.DB, modules ...RouteRegistrar) *gin.Engine {
+// Modules groups route registrars by whether they require authentication.
+// Public modules (login, refresh) are reachable without a token; protected
+// ones sit behind the auth middleware.
+type Modules struct {
+	Public    []RouteRegistrar
+	Protected []RouteRegistrar
+}
+
+func New(logger *slog.Logger, db *gorm.DB, authMW gin.HandlerFunc, modules Modules) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery(), requestLogger(logger))
 
@@ -33,8 +41,16 @@ func New(logger *slog.Logger, db *gorm.DB, modules ...RouteRegistrar) *gin.Engin
 	// Business resources are versioned. Modules register their routes onto
 	// the /api/v1 group without knowing the prefix exists.
 	v1 := r.Group("/api/v1")
-	for _, m := range modules {
-		m.RegisterRoutes(v1)
+
+	public := v1.Group("")
+	for _, m := range modules.Public {
+		m.RegisterRoutes(public)
+	}
+
+	protected := v1.Group("")
+	protected.Use(authMW)
+	for _, m := range modules.Protected {
+		m.RegisterRoutes(protected)
 	}
 
 	return r

@@ -11,9 +11,10 @@ import "errors"
 type Kind int
 
 const (
-	KindValidation Kind = iota // bad input — maps to 400
-	KindConflict               // state collision — maps to 409
-	KindNotFound               // missing resource — maps to 404
+	KindValidation   Kind = iota // bad input — maps to 400
+	KindUnauthorized              // bad credentials or token — maps to 401
+	KindConflict                  // state collision — maps to 409
+	KindNotFound                  // missing resource — maps to 404
 )
 
 // Error is a domain error tagged with a category. Its message is clean and

@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -14,6 +15,13 @@ type Config struct {
 	Env     string
 	AppPort string
 	DB      DBConfig
+	Auth    AuthConfig
+}
+
+type AuthConfig struct {
+	JWTSecret  string
+	AccessTTL  time.Duration
+	RefreshTTL time.Duration
 }
 
 type DBConfig struct {
@@ -55,6 +63,11 @@ func Load() (*Config, error) {
 			Port:     getEnv("DB_PORT", "5432"),
 			SSLMode:  getEnv("DB_SSLMODE", "require"),
 		},
+		Auth: AuthConfig{
+			JWTSecret:  getEnv("JWT_SECRET", "dev-insecure-secret-change-me"),
+			AccessTTL:  getEnvDuration("ACCESS_TOKEN_TTL", 15*time.Minute),
+			RefreshTTL: getEnvDuration("REFRESH_TOKEN_TTL", 7*24*time.Hour),
+		},
 	}, nil
 }
 
@@ -77,4 +90,18 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// getEnvDuration parses a Go duration string (e.g. "15m", "168h"). An unset
+// or unparseable value falls back to the default.
+func getEnvDuration(key string, fallback time.Duration) time.Duration {
+	v, ok := os.LookupEnv(key)
+	if !ok {
+		return fallback
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return fallback
+	}
+	return d
 }

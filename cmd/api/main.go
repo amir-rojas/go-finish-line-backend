@@ -13,6 +13,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	authjwt "finish-line/internal/auth/adapters/jwt"
+	authmiddleware "finish-line/internal/auth/adapters/middleware"
+	authpostgres "finish-line/internal/auth/adapters/postgres"
+	authrest "finish-line/internal/auth/adapters/rest"
+	authservice "finish-line/internal/auth/service"
 	"finish-line/internal/common/config"
 	"finish-line/internal/common/postgres"
 	"finish-line/internal/common/security"
@@ -50,23 +55,44 @@ func run() error {
 		return fmt.Errorf("connecting to database: %w", err)
 	}
 
+	// Shared infrastructure used across modules.
+	hasher := security.NewBcryptHasher()
+	userRepo := userpostgres.NewRepository(db)
+	userSvc := userservice.New(userRepo, hasher)
+
 	// AutoMigrate is a development convenience; production schema changes
 	// must ship as explicit, reviewed migrations. Register each module's
-	// migration here in dependency order.
+	// migration here in dependency order (users before refresh_tokens).
 	if !cfg.IsProduction() {
-		if err := postgres.RunMigrations(db, userpostgres.Migrate); err != nil {
+		if err := postgres.RunMigrations(db, userpostgres.Migrate, authpostgres.Migrate); err != nil {
 			return fmt.Errorf("running dev migrations: %w", err)
 		}
-		logger.Info("dev migrations applied")
+		if err := userSvc.EnsureAdmin(ctx, "Admin", "admin@finishline.dev", "admin.123"); err != nil {
+			return fmt.Errorf("seeding admin user: %w", err)
+		}
+		logger.Info("dev migrations applied and admin ensured")
 	}
 
-	userModule := userrest.NewHandler(
-		userservice.New(userpostgres.NewRepository(db), security.NewBcryptHasher()),
+	// Auth module reuses the user repository (as a UserFinder) and the hasher
+	// (as a PasswordVerifier) — the narrow interfaces it actually needs.
+	authSvc := authservice.New(
+		userRepo,
+		hasher,
+		authjwt.New(cfg.Auth.JWTSecret, cfg.Auth.AccessTTL),
+		authpostgres.NewRepository(db),
+		cfg.Auth.RefreshTTL,
 	)
 
+	userModule := userrest.NewHandler(userSvc)
+	authModule := authrest.NewHandler(authSvc, cfg.Auth.RefreshTTL, cfg.IsProduction())
+	authMW := authmiddleware.RequireAuth(authSvc)
+
 	srv := &http.Server{
-		Addr:         ":" + cfg.AppPort,
-		Handler:      server.New(logger, db, userModule),
+		Addr: ":" + cfg.AppPort,
+		Handler: server.New(logger, db, authMW, server.Modules{
+			Public:    []server.RouteRegistrar{authModule},
+			Protected: []server.RouteRegistrar{userModule},
+		}),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
